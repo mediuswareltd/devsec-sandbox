@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<!--
+  LDAP INJECTION DEMO — FIXED VERSION
+  =====================================
+  This file demonstrates the correct defense against LDAP injection: escaping special characters.
+
+  THE FIX — LDAP SPECIAL CHARACTER ESCAPING:
+  --------------------------------------------
+  RFC 4515 defines how special characters must be escaped in LDAP search filter assertions.
+  Characters that have syntactic meaning in LDAP filters must be replaced with their
+  escaped equivalents before being inserted into a filter string:
+
+    Character  | Escape Sequence | Why it is special
+    -----------|-----------------|--------------------------------------------------
+    \          | \5c             | Escape character itself — must be escaped first!
+    *          | \2a             | Wildcard operator — matches any value
+    (          | \28             | Opens a filter condition
+    )          | \29             | Closes a filter condition
+    NUL (\0)   | \00             | Null byte — can truncate strings in some implementations
+
+  After escaping, the attacker's payload *)(uid=*))(|(uid=* becomes:
+    \2a\29\28uid=\2a\29\29\28|\28uid=\2a
+
+  Which the LDAP server treats as a LITERAL attribute value search — it looks for a user
+  whose uid field literally equals the escaped string. No such user exists, so auth fails.
+
+  THE ESCAPING FUNCTION:
+  -----------------------
+  function escapeLdap(input) {
+    return input
+      .replace(/\\/g, '\\5c')   // backslash FIRST (avoid double-escaping)
+      .replace(/\*/g,  '\\2a')  // asterisk (wildcard)
+      .replace(/\(/g,  '\\28')  // open parenthesis
+      .replace(/\)/g,  '\\29')  // close parenthesis
+      .replace(/\0/g,  '\\00'); // null byte
+  }
+
+  NOTE: The backslash must be escaped FIRST. If you escaped the others first and then
+  escaped backslashes, you would double-escape the already-generated \28, \29, etc.
+
+  IMPORTANT: This escaping only applies to SEARCH FILTER values (what goes after the = in
+  a filter condition). DN components require different escaping per RFC 4514.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LDAP Injection — Fixed</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 860px;
+      margin: 40px auto;
+      padding: 0 20px;
+      background: #0f0f0f;
+      color: #e0e0e0;
+    }
+    h1  { color: #44dd88; }
+    h2  { color: #44bb77; border-bottom: 1px solid #333; padding-bottom: 6px; }
+    h3  { color: #88ffaa; }
+    label { display: block; margin-bottom: 4px; color: #aaa; }
+    input[type=text] {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 14px;
+      background: #1e1e1e;
+      border: 1px solid #444;
+      color: #e0e0e0;
+      border-radius: 4px;
+      box-sizing: border-box;
+      font-family: monospace;
+    }
+    button {
+      background: #1a6b40;
+      color: #fff;
+      border: none;
+      padding: 10px 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    button:hover { background: #22884f; }
+    .card {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .safe    { border-left: 4px solid #44dd88; }
+    .info    { border-left: 4px solid #3399ff; }
+    .blocked { border-left: 4px solid #ff9944; }
+    pre {
+      background: #111;
+      padding: 14px;
+      border-radius: 4px;
+      overflow-x: auto;
+      color: #7ec8e3;
+      font-size: 0.9rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    code {
+      background: #222;
+      padding: 2px 6px;
+      border-radius: 3px;
+      color: #88ffaa;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 0.8rem;
+      font-weight: bold;
+    }
+    .badge-safe { background: #003320; color: #44dd88; border: 1px solid #44dd88; }
+    .result-box {
+      padding: 14px;
+      border-radius: 6px;
+      margin-top: 10px;
+      font-weight: bold;
+      font-size: 1.05rem;
+    }
+    .result-success  { background: #0a2e1a; color: #44dd88; border: 1px solid #44dd88; }
+    .result-fail     { background: #2e0a0a; color: #ff4d4d; border: 1px solid #ff4d4d; }
+    .result-blocked  { background: #2e1a00; color: #ffaa00; border: 1px solid #ffaa00; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px 12px; border: 1px solid #333; text-align: left; }
+    th { background: #222; color: #88ffaa; }
+    .raw-input  { color: #ff9944; }
+    .safe-escaped { color: #44dd88; }
+  </style>
+</head>
+<body>
+
+  <h1>LDAP Injection Demo <span class="badge badge-safe">FIXED</span></h1>
+
+  <div class="card safe">
+    <h2>What changed?</h2>
+    <p>
+      Before inserting user input into the LDAP filter string, all <strong>LDAP special
+      characters are escaped</strong> according to RFC 4515.
+    </p>
+    <p>
+      The characters <code>\ * ( ) NUL</code> are replaced with their
+      <code>\xx</code> escape sequences. After escaping, these characters are treated as
+      literal data values by the LDAP server — they cannot alter the filter structure.
+    </p>
+    <p>Try the same injection attacks — they are all safely escaped now.</p>
+    <p>Open <code>ldap-vulnerable.html</code> to see the broken version.</p>
+  </div>
+
+  <div class="card">
+    <h2>Login</h2>
+    <form id="loginForm" onsubmit="handleLogin(event)">
+      <label for="username">Username</label>
+      <input type="text" id="username" placeholder="alice" value="alice" autocomplete="off">
+
+      <label for="password">
+        Password
+        <span style="color:#88ffaa;font-size:0.85rem;">
+          — try <code>*)(uid=*))(|(uid=*</code> — it will be safely escaped
+        </span>
+      </label>
+      <input type="text" id="password" placeholder="wonderland" autocomplete="off">
+
+      <button type="submit">Sign In</button>
+    </form>
+  </div>
+
+  <div id="resultArea" style="display:none;"></div>
+
+  <div class="card info">
+    <h2>Attacks to try (all safely escaped)</h2>
+    <table>
+      <tr><th>Username</th><th>Password</th><th>After escaping</th></tr>
+      <tr>
+        <td><code>alice</code></td>
+        <td><code>wonderland</code></td>
+        <td>No special chars — succeeds normally</td>
+      </tr>
+      <tr>
+        <td><code>*)(uid=*))(|(uid=*</code></td>
+        <td><em>anything</em></td>
+        <td><code>\2a\29\28uid=\2a\29\29\28|\28uid=\2a</code> — literal string, no match</td>
+      </tr>
+      <tr>
+        <td><code>alice)(|(uid=*</code></td>
+        <td><em>anything</em></td>
+        <td><code>alice\29\28|\28uid=\2a</code> — literal string, no match</td>
+      </tr>
+      <tr>
+        <td><code>*</code></td>
+        <td><em>anything</em></td>
+        <td><code>\2a</code> — wildcard escaped, no match</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="card safe">
+    <h2>The escaping function (RFC 4515)</h2>
+    <pre>/**
+ * Escapes special characters in LDAP search filter assertion values.
+ * Per RFC 4515, the following characters must be escaped:
+ *   \  (U+005C) → \5c   ← MUST be escaped FIRST to avoid double-escaping!
+ *   *  (U+002A) → \2a
+ *   (  (U+0028) → \28
+ *   )  (U+0029) → \29
+ *   \0 (U+0000) → \00
+ *
+ * @param {string} input - Raw user input
+ * @returns {string} Input safe to insert into an LDAP filter value position
+ */
+function escapeLdap(input) {
+  return String(input)
+    .replace(/\\/g, '\\5c')  // backslash FIRST — prevents double-escaping
+    .replace(/\*/g,  '\\2a') // asterisk (wildcard operator)
+    .replace(/\(/g,  '\\28') // open parenthesis (opens filter condition)
+    .replace(/\)/g,  '\\29') // close parenthesis (closes filter condition)
+    .replace(/\0/g,  '\\00'); // null byte (can truncate in some LDAP libs)
+}
+
+// Usage:
+function buildSafeLdapFilter(username, password) {
+  const safeUsername = escapeLdap(username);
+  const safePassword = escapeLdap(password);
+  return `(&(uid=${safeUsername})(userPassword=${safePassword}))`;
+}
+
+// Attack input:    *)(uid=*))(|(uid=*
+// After escape:    \2a\29\28uid=\2a\29\29\28|\28uid=\2a
+// Safe filter:     (&(uid=\2a\29\28uid=\2a\29\29\28|\28uid=\2a)(userPassword=x))
+// LDAP looks for:  A user whose uid LITERALLY equals that escaped string → no match!</pre>
+  </div>
+
+  <div class="card info">
+    <h2>Escape table (RFC 4515)</h2>
+    <table>
+      <tr><th>Character</th><th>Escape Sequence</th><th>Why it is dangerous unescaped</th></tr>
+      <tr><td><code>\</code></td><td><code>\5c</code></td><td>Escape character — must escape first to avoid double-escaping</td></tr>
+      <tr><td><code>*</code></td><td><code>\2a</code></td><td>Wildcard — <code>(uid=*)</code> matches ANY user</td></tr>
+      <tr><td><code>(</code></td><td><code>\28</code></td><td>Opens a new filter condition — injects extra conditions</td></tr>
+      <tr><td><code>)</code></td><td><code>\29</code></td><td>Closes current condition prematurely — breaks filter structure</td></tr>
+      <tr><td><code>NUL</code></td><td><code>\00</code></td><td>Null byte — may truncate strings in older LDAP libraries</td></tr>
+    </table>
+  </div>
+
+  <script>
+    // ---------------------------------------------------------------------------
+    // In-memory "LDAP directory" — same data as vulnerable version
+    // ---------------------------------------------------------------------------
+    const ldapDirectory = [
+      { uid: 'alice', userPassword: 'wonderland', cn: 'Alice Liddell', role: 'user'          },
+      { uid: 'admin', userPassword: 'adm1nP@ss',  cn: 'Administrator', role: 'administrator' },
+      { uid: 'bob',   userPassword: 'b0bpass',     cn: 'Bob Builder',   role: 'user'          },
+    ];
+
+    // ---------------------------------------------------------------------------
+    // FIX: LDAP special character escaping function (RFC 4515)
+    // ---------------------------------------------------------------------------
+    /**
+     * Escapes all LDAP filter assertion special characters.
+     *
+     * IMPORTANT ORDER: Backslash (\) must be replaced FIRST.
+     * If we replaced ( with \28 first, then later replaced \ with \5c,
+     * the \28 we generated would become \5c28 — incorrect double-escaping!
+     *
+     * Correct order: \ → \5c, then * → \2a, ( → \28, ) → \29, \0 → \00
+     */
+    function escapeLdap(input) {
+      return String(input)
+        .replace(/\\/g, '\\5c')  // 1. Backslash — escape FIRST!
+        .replace(/\*/g,  '\\2a') // 2. Asterisk (wildcard)
+        .replace(/\(/g,  '\\28') // 3. Open parenthesis
+        .replace(/\)/g,  '\\29') // 4. Close parenthesis
+        .replace(/\0/g,  '\\00'); // 5. Null byte
+    }
+
+    // ---------------------------------------------------------------------------
+    // SAFE: build LDAP filter with escaped values
+    // ---------------------------------------------------------------------------
+    /**
+     * Builds a safe LDAP authentication filter.
+     * Both username and password are escaped before insertion.
+     * Even if the attacker injects LDAP syntax characters, they will be
+     * treated as literal value characters by the LDAP server.
+     *
+     * @param {string} username - Raw user input (will be escaped)
+     * @param {string} password - Raw user input (will be escaped)
+     * @returns {{ filter: string, escapedUsername: string, escapedPassword: string }}
+     */
+    function buildSafeLdapFilter(username, password) {
+      const escapedUsername = escapeLdap(username);
+      const escapedPassword = escapeLdap(password);
+      const filter = `(&(uid=${escapedUsername})(userPassword=${escapedPassword}))`;
+      return { filter, escapedUsername, escapedPassword };
+    }
+
+    // ---------------------------------------------------------------------------
+    // SAFE: LDAP login using escaped filter values
+    // ---------------------------------------------------------------------------
+    function safeLdapLogin(username, password) {
+      const { filter, escapedUsername, escapedPassword } = buildSafeLdapFilter(username, password);
+
+      // After escaping, the filter values are safe literals.
+      // An LDAP server would search for a user whose uid field is EXACTLY equal
+      // to the escaped string. Injection characters become part of the search value.
+
+      // We check whether any special chars were present (for educational display)
+      const hadSpecialChars = escapedUsername !== username || escapedPassword !== password;
+
+      // Normal exact-match lookup using the original (unescaped) values.
+      // This simulates what the LDAP server does: after de-escaping, it compares
+      // the literal values — the injected string never matches a real uid.
+      const user = ldapDirectory.find(
+        u => u.uid === username && u.userPassword === password
+      ) || null;
+
+      return { user, filter, escapedUsername, escapedPassword, hadSpecialChars };
+    }
+
+    // ---------------------------------------------------------------------------
+    // Form handler
+    // ---------------------------------------------------------------------------
+    function handleLogin(event) {
+      event.preventDefault();
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const result   = safeLdapLogin(username, password);
+      renderResult(username, password, result);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Result renderer
+    // ---------------------------------------------------------------------------
+    function renderResult(username, password, result) {
+      const { user, filter, escapedUsername, escapedPassword, hadSpecialChars } = result;
+      const area = document.getElementById('resultArea');
+      area.style.display = 'block';
+
+      let resultClass, resultMsg;
+      if (user) {
+        resultClass = 'result-success';
+        resultMsg   = `Login successful — welcome, ${user.cn}! (Role: ${user.role})`;
+      } else if (hadSpecialChars) {
+        resultClass = 'result-blocked';
+        resultMsg   = 'Injection attempt safely escaped — no matching LDAP entry found.';
+      } else {
+        resultClass = 'result-fail';
+        resultMsg   = 'Login failed — no matching LDAP entry.';
+      }
+
+      area.innerHTML = `
+        <div class="card ${hadSpecialChars && !user ? 'blocked' : (user ? 'safe' : '')}">
+          <h2>Result</h2>
+          <div class="result-box ${resultClass}">${escapeHtml(resultMsg)}</div>
+          ${hadSpecialChars && !user
+            ? `<p style="color:#ffaa00;margin-top:10px;">
+                Special LDAP characters were detected and escaped. The filter structure
+                was preserved — the injection had no effect.
+              </p>` : ''}
+        </div>
+
+        <div class="card safe">
+          <h2>Safe LDAP Filter (after escaping)</h2>
+          <p>Raw input was escaped before insertion:</p>
+          <table style="margin-bottom:14px;">
+            <tr>
+              <th></th>
+              <th>Raw input</th>
+              <th>After escapeLdap()</th>
+            </tr>
+            <tr>
+              <td>username</td>
+              <td><code class="raw-input">${escapeHtml(username)}</code></td>
+              <td><code class="safe-escaped">${escapeHtml(escapedUsername)}</code></td>
+            </tr>
+            <tr>
+              <td>password</td>
+              <td><code class="raw-input">${escapeHtml(password)}</code></td>
+              <td><code class="safe-escaped">${escapeHtml(escapedPassword)}</code></td>
+            </tr>
+          </table>
+          <p>Final filter sent to LDAP server:</p>
+          <pre>${escapeHtml(filter)}</pre>
+          ${hadSpecialChars
+            ? `<p>
+                The LDAP server looks for a user whose <code>uid</code> field LITERALLY equals
+                <code>${escapeHtml(escapedUsername)}</code>. No such user exists.
+                The injected operators were neutralized.
+              </p>`
+            : `<p>No special characters — filter structure matches the expected pattern.</p>`}
+        </div>
+
+        <div class="card info">
+          <h2>Input submitted</h2>
+          <p>Username: <code>${escapeHtml(username)}</code></p>
+          <p>Password: <code>${escapeHtml(password)}</code></p>
+          ${hadSpecialChars
+            ? `<p style="color:#ffaa00;">
+                Special LDAP characters detected in input.
+                Escaped: <code>* → \2a, ( → \28, ) → \29, \\ → \5c, NUL → \00</code>
+              </p>` : ''}
+        </div>
+
+        <button onclick="resetForm()" style="background:#333;margin-bottom:20px;">← Try again</button>
+      `;
+    }
+
+    function resetForm() {
+      document.getElementById('resultArea').style.display = 'none';
+      document.getElementById('resultArea').innerHTML = '';
+      document.getElementById('username').value = 'alice';
+      document.getElementById('password').value = '';
+      document.getElementById('username').focus();
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+  </script>
+
+</body>
+</html>

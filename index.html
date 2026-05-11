@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vulnerability Playground</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --canvas:        #ffffff;
+      --canvas-subtle: #f6f8fa;
+      --canvas-inset:  #f0f6fc;
+      --border:        #d0d7de;
+      --border-muted:  #d8dee4;
+      --text:          #24292f;
+      --text-muted:    #57606a;
+      --text-subtle:   #6e7781;
+      --link:          #0969da;
+
+      --red-fg:        #cf222e;
+      --red-bg:        #ffeef0;
+      --red-border:    #ffccd5;
+      --green-fg:      #1a7f37;
+      --green-bg:      #dafbe1;
+      --green-border:  #aef0b7;
+      --blue-fg:       #0550ae;
+      --blue-bg:       #ddf4ff;
+      --blue-border:   #80ccff;
+      --yellow-fg:     #7d4e00;
+      --yellow-bg:     #fff8c5;
+      --yellow-border: #e3b341;
+      --purple-fg:     #5435d0;
+      --purple-bg:     #fbefff;
+      --purple-border: #d8b9f8;
+    }
+
+    body {
+      background: var(--canvas-subtle);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+                   Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    a { color: var(--link); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Topbar ── */
+    .topbar {
+      background: #24292f;
+      color: #f0f6fc;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .topbar-brand {
+      font-weight: 600;
+      font-size: 15px;
+      color: #f0f6fc;
+      letter-spacing: 0.01em;
+    }
+    .topbar-brand span { color: #7d8590; font-weight: 400; }
+    .topbar-links { display: flex; gap: 20px; font-size: 13px; }
+    .topbar-links a { color: #cdd9e5; }
+    .topbar-links a:hover { color: #ffffff; text-decoration: none; }
+
+    /* ── Page wrap ── */
+    .wrap { max-width: 1280px; margin: 0 auto; padding: 28px 20px 60px; }
+
+    /* ── Alert banner ── */
+    .alert {
+      background: var(--yellow-bg);
+      border: 1px solid var(--yellow-border);
+      border-radius: 6px;
+      padding: 10px 16px;
+      font-size: 13px;
+      color: var(--yellow-fg);
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .alert svg { flex-shrink: 0; }
+
+    /* ── Quick start box ── */
+    .quickstart {
+      background: var(--canvas);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .quickstart-label { font-size: 13px; font-weight: 600; white-space: nowrap; color: var(--text); }
+    .quickstart code {
+      font-family: ui-monospace, "Cascadia Code", "Fira Code", "Consolas", monospace;
+      font-size: 13px;
+      background: var(--canvas-subtle);
+      border: 1px solid var(--border);
+      padding: 6px 14px;
+      border-radius: 6px;
+      color: var(--green-fg);
+      letter-spacing: 0.02em;
+    }
+    .quickstart-note { font-size: 12px; color: var(--text-muted); flex: 1; min-width: 200px; }
+
+    /* ── Section label ── */
+    .section-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-subtle);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── Grid ── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 12px;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--canvas);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .card:hover { border-color: #0969da; box-shadow: 0 0 0 3px rgba(9,105,218,.12); }
+
+    .card-head {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--border-muted);
+      background: var(--canvas);
+    }
+    .card-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+
+    .num {
+      font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-subtle);
+      background: var(--canvas-subtle);
+      border: 1px solid var(--border);
+      padding: 1px 7px;
+      border-radius: 20px;
+    }
+    .card-title { font-size: 14px; font-weight: 600; color: var(--text); }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 1px 8px;
+      border-radius: 20px;
+      border: 1px solid;
+    }
+    .tag-node   { color: var(--blue-fg);   background: var(--blue-bg);   border-color: var(--blue-border);   }
+    .tag-html   { color: var(--purple-fg); background: var(--purple-bg); border-color: var(--purple-border); }
+    .tag-mixed  { color: var(--yellow-fg); background: var(--yellow-bg); border-color: var(--yellow-border); }
+
+    .card-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.55;
+      margin-top: 2px;
+    }
+
+    /* ── Demo rows ── */
+    .demo-list { padding: 0; }
+
+    .demo-row {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      padding: 9px 16px;
+      border-top: 1px solid var(--border-muted);
+      font-family: ui-monospace, "Cascadia Code", "Fira Code", "Consolas", monospace;
+      font-size: 11.5px;
+      transition: background 80ms;
+    }
+    .demo-row:hover { background: var(--canvas-subtle); }
+
+    .demo-row.vuln { border-left: 3px solid var(--red-fg); }
+    .demo-row.fix  { border-left: 3px solid var(--green-fg); }
+
+    .lbl {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 2px 7px;
+      border-radius: 20px;
+      border: 1px solid;
+      white-space: nowrap;
+      margin-right: 10px;
+      flex-shrink: 0;
+    }
+    .lbl-vuln { color: var(--red-fg);   background: var(--red-bg);   border-color: var(--red-border);   }
+    .lbl-fix  { color: var(--green-fg); background: var(--green-bg); border-color: var(--green-border); }
+
+    .cmd { color: var(--text-muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cmd b { color: var(--text); font-weight: 400; }
+
+    .port-link {
+      flex-shrink: 0;
+      margin-left: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--link);
+      background: var(--blue-bg);
+      border: 1px solid var(--blue-border);
+      padding: 2px 8px;
+      border-radius: 4px;
+      text-decoration: none;
+      font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace;
+    }
+    .port-link:hover { background: #b6dcfe; text-decoration: none; }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: 48px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-subtle);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    footer a { color: var(--text-subtle); }
+    footer a:hover { color: var(--text); text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<!-- Top navigation bar -->
+<nav class="topbar">
+  <span class="topbar-brand">Vulnerability Playground <span>/ Security Lab</span></span>
+  <div class="topbar-links">
+    <a href="https://www.linkedin.com/in/YOUR-PROFILE" target="_blank" rel="noopener">LinkedIn</a>
+    <a href="https://owasp.org/www-project-top-ten/" target="_blank" rel="noopener">OWASP Top 10</a>
+    <a href="README.md" target="_blank">README</a>
+  </div>
+</nav>
+
+<div class="wrap">
+
+  <!-- Warning -->
+  <div class="alert">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/>
+    </svg>
+    For educational use only. Run on localhost. Do not deploy vulnerable servers on a public or shared network.
+  </div>
+
+  <!-- Quick start -->
+  <div class="quickstart">
+    <span class="quickstart-label">Quick Start</span>
+    <code>node start-all.js</code>
+    <span class="quickstart-note">
+      Starts all 22 servers simultaneously (11 vulnerable + 11 fixed, on separate ports).
+      Then open the dashboard links below.
+      HTML-only demos (07, 12, 13, 14) open directly in the browser.
+    </span>
+  </div>
+
+  <div class="section-label">14 Vulnerability Categories</div>
+
+  <div class="grid">
+
+    <!-- 01 -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-meta">
+          <span class="num">01</span>
+          <span class="card-title">Broken Access Control</span>
+          <span class="tag tag-node">Node.js</span>
+        </div>
+        <p class="card-desc">Users access other users' private data by changing an ID in the URL. Classic Insecure Direct Object Reference (IDOR).</p>
+      </div>
+      <div class="demo-list">
+        <div class="demo-row vuln"><span class="lbl lbl-vuln">Vuln</span><span class="cmd">cd 01-broken-access-control &amp;&amp; node vulnerable.js</span><a class="port-link" href="http://localhost:3001" target="_blank">:3001</a></div>
+        <div class="demo-row fix"> <span class="lbl lbl-fix">Fixed</span><span class="cmd">cd 01-broken-access-control &amp;&amp; node fixed.js</span><a class="port-link" href="http://localhost:3101" target="_blank">:3101</a></div>
+      </div>
+    </div>
+
+    <!-- 02 -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-meta">
+          <span class="num">02</span>
+          <span class="card-title">Injection</span>
+          <span class="tag tag-mixed">Node.js + HTML</span>
+        </div>
+        <p class="card-desc">Untrusted input executed as code in SQL queries, OS commands, NoSQL filters, and LDAP filter strings.</p>
+      </div>
+      <div class="demo-list">
+        <div class="demo-row vuln"><span class="lbl lbl-vuln">SQL</span><span class="cmd">cd 02-injection &amp;&amp; node sql-vulnerable.js</span><a class="port-link" href="http://localhost:3002" target="_blank">:3002</a></div>
+        <div class="demo-row fix"> <span class="lbl lbl-fix">SQL Fix</span><span class="cmd">cd 02-injection &amp;&amp; node sql-fixed.js</span><a class="port-link" href="http://localhost:3102" target="_blank">:3102</a></div>
+        <div class="demo-row vuln"><span class="lbl lbl-vuln">CMD</span><span class="cmd">cd 02-injection &amp;&amp; node command-vulnerable.js</span><a class="port-link" href="http://localhost:3003" target="_blank">:3003</a></div>
+        <div class="demo-row fix"> <span class="lbl lbl-fix">CMD Fix</span><span class="cmd">cd 02-injection &amp;&amp; node command-fixed.js</span><a class="port-link" href="http://localhost:3103" target="_blank">:3103</a></div>
+        <div class="demo-row vuln"><span class="lbl lbl-vuln">NoSQL</span><span class="cmd">Open 02-injection/nosql-vulnerable.html</span></div>
+        <div class="demo-row fix"> <span class="lbl lbl-fix">NoSQL Fix</span><span class="cmd">Open 02-injection/nosql-fixed.html</span></div>
+        <div class="demo-row vuln"><span class="lbl lbl-vuln">LDAP</span><span class="cmd">Open 02-injection/ldap-vulnerable.html</span></div>
+        <div class="demo-row fix"> <span class="lbl lbl-fix">LDAP Fix</span><span class="cmd">Open 02-injection/ldap-fixed.html</span></div>
+      </div>
+    </div>
+
+    <!-- 03 -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-meta">
+          <span class="num">03</span>
+          <span class="card-title">Cross-Site Scripting (XSS)</span>
+          <span class="tag tag-mixed">Node.js + HTML</span>
+        </div>
+        <p class="card-desc">Malicious scripts injected into pages execute in other users' browsers, enabling cookie theft and session hijacking.</p>
+      </div>
+      <div class="demo-list">
+        <div class="demo-row vuln"><span class="lbl lbl-vuln">Reflected</span><span class="cmd">Open 03-xss/reflected-vulnerable.html</span></div>
+        <div class="demo-row fix"> <span class="lbl lbl-fix">Reflected Fix</span><span class="cmd">Open 03-xss/reflected-fixed.html</span></div>
+        <div class="demo-row vuln"><span class="lbl lbl-vuln">Stored</span><span class="cmd">cd 03-xss &amp;&amp; node stored-vulnerable.js</span><a class="port-link" href="http://localhost:3004" target="_blank">:3004</a></div>
+        <div class="demo-row fix"> <span class="lbl lbl-fix">Stored Fix</span><span class="cmd">cd 03-xss &amp;&amp; node stored-fixed.js</span><a class="port-link" href="http://localhost:3104" target="_blank">:3104</a></div>
+      </div>
+    </div>
+
+    <!-- 04 -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-meta">
+          <span class="num">04</span>
+          <span class="card-title">Cross-Site Request Forgery</span>
+          <span class="tag tag-node">Node.js</span>
+        </div>
+        <p class="card-desc">A malicious site silently submits authenticated requests to another site using the victim's active session cookies.</p>
+      </div>
+      <div class="demo-list">
+        <div class="demo-row vuln"><span class="lbl lbl-vuln">Vuln</span><span class="cmd">cd 04-csrf &amp;&amp; node vulnerable.js</span><a class="port-link" href="http://localhost:3005" target="_blank">:3005</a></div>
+        <div class="demo-row fix"> <span class="lbl lbl-fix">Fixed</span><span class="cmd">cd 04-csrf &amp;&amp; node fixed.js</span><a class="port-link" href="http://localhost:3105" target="_blank">:3105</a></div>
+      </div>
+    </div>
+
+    <!-- 05 -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-meta">
+          <span class="num">05</span>
+          <span class="card-title">Identification &amp; Auth Failures</span>
+          <span class="tag tag-node">Node.js</span>
+        </div>
+        <p class="card-desc">Plain-text passwords, sequential session IDs, no brute-force lockout, and acceptance of trivially weak passwords.</p>
+      </div>
+      <div class="demo-list">
+        <div class="demo-row vuln"><span class="lbl lbl-vuln">Vuln</span><span class="cmd">cd 05-auth-failures &amp;&amp; node vulnerable.js</span><a class="port-link" href="http://localhost:3006" target="_blank">:3006</a></div>
+        <div class="demo-row fix"> <span class="lbl lbl-fix">Fixed</span><span class="cmd">cd 05-auth-failures &amp;&amp; node fixed.js</span><a class="port-link" href="http://localhost:3106" target="_blank">:3106</a></div>
+      </div>
+    </div>
+
+    <!-- 06 -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-meta">
+          <span class="num">06</span>
+          <span class="card-title">Security Misconfiguration</span>
+          <span class="tag tag-node">Node.js</span>
+        </div>
+        <p class="card-desc">Stack traces in responses, unauthenticated admin endpoints, default credentials, and technology-leaking headers.</p>
+      </div>
+      <div class="demo-list">
+        <div class="demo-row vuln"><span class="lbl lbl-vuln">Vuln</span><span class="cmd">cd 06-security-misconfiguration &amp;&amp; node vulnerable.js</span><a class="port-link" href="http://localhost:3007" target="_blank">:3007</a></div>
+        <div class="demo-row fix"> <span class="lbl lbl-fix">Fixed</span><span class="cmd">cd 06-security-misconfiguration &amp;&amp; node fixed.js</span><a class="port-link" href="http://localhost:3107" target="_blank">:3107</a></div>
+      </div>
+    </div>
+
+    <!-- 07 -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-meta">
+          <span class="num">07</span>
+          <span class="card-title">Vulnerable &amp; Outdated Components</span>
+          <span class="tag tag-html">HTML</span>
+        </div>
+        <p class="card-desc">A simulated library using <code style="font-family:monospace;font-size:11px;background:#f6f8fa;padding:1px 5px;border-radius:3px;border:1px solid #d0d7de">eval()</code> for JSON parsing — arbitrary code execution via a known dependency CVE.</p>
+      </div>
+      <div class="demo-list">
+        <div class="demo-row vuln"><span class="lbl lbl-vuln">Vuln</span><span class="cmd">Open 07-vulnerable-components/vulnerable.html</span></div>
+        <div class="demo-row fix"> <span class="lbl lbl-fix">Fixed</span><span class="cmd">Open 07-vulnerable-components/fixed.html</span></div>
+      </div>
+    </div>
+
+    <!-- 08 -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-meta">
+          <span class="num">08</span>
+          <span class="card-title">Cryptographic Failures</span>
+          <span class="tag tag-node">Node.js</span>
+        </div>
+        <p class="card-desc">MD5 hashing with no salt, plaintext credit card storage. Hashes are crackable via rainbow tables in under a second.</p>
+      </div>
+      <div class="demo-list">
+        <div class="demo-row vuln"><span class="lbl lbl-vuln">Vuln</span><span class="cmd">cd 08-cryptographic-failures &amp;&amp; node vulnerable.js</span><a class="port-link" href="http://localhost:3008" target="_blank">:3008</a></div>
+        <div class="demo-row fix"> <span class="lbl lbl-fix">Fixed</span><span class="cmd">cd 08-cryptographic-failures &amp;&amp; node fixed.js</span><a class="port-link" href="http://localhost:3108" target="_blank">:3108</a></div>
+      </div>
+    </div>
+
+    <!-- 09 -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-meta">
+          <span class="num">09</span>
+          <span class="card-title">Logging &amp; Monitoring Failures</span>
+          <span class="tag tag-node">Node.js</span>
+        </div>
+        <p class="card-desc">No audit trail allows brute-force attacks and data exfiltration to proceed with zero server-side evidence.</p>
+      </div>
+      <div class="demo-list">
+        <div class="demo-row vuln"><span class="lbl lbl-vuln">Vuln</span><span class="cmd">cd 09-logging-failures &amp;&amp; node vulnerable.js</span><a class="port-link" href="http://localhost:3009" target="_blank">:3009</a></div>
+        <div class="demo-row fix"> <span class="lbl lbl-fix">Fixed</span><span class="cmd">cd 09-logging-failures &amp;&amp; node fixed.js</span><a class="port-link" href="http://localhost:3109" target="_blank">:3109</a></div>
+      </div>
+    </div>
+
+    <!-- 10 -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-meta">
+          <span class="num">10</span>
+          <span class="card-title">Server-Side Request Forgery</span>
+          <span class="tag tag-node">Node.js</span>
+        </div>
+        <p class="card-desc">The server fetches any attacker-supplied URL, exposing internal services, cloud metadata endpoints, and localhost resources.</p>
+      </div>
+      <div class="demo-list">
+        <div class="demo-row vuln"><span class="lbl lbl-vuln">Vuln</span><span class="cmd">cd 10-ssrf &amp;&amp; node vulnerable.js</span><a class="port-link" href="http://localhost:3010" target="_blank">:3010</a></div>
+        <div class="demo-row fix"> <span class="lbl lbl-fix">Fixed</span><span class="cmd">cd 10-ssrf &amp;&amp; node fixed.js</span><a class="port-link" href="http://localhost:3110" target="_blank">:3110</a></div>
+      </div>
+    </div>
+
+    <!-- 11 -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-meta">
+          <span class="num">11</span>
+          <span class="card-title">Denial of Service</span>
+          <span class="tag tag-node">Node.js</span>
+        </div>
+        <p class="card-desc">No rate limiting allows a single client to flood the server with concurrent requests until it becomes unavailable.</p>
+      </div>
+      <div class="demo-list">
+        <div class="demo-row vuln"><span class="lbl lbl-vuln">Vuln</span><span class="cmd">cd 11-ddos &amp;&amp; node vulnerable.js</span><a class="port-link" href="http://localhost:3011" target="_blank">:3011</a></div>
+        <div class="demo-row fix"> <span class="lbl lbl-fix">Fixed</span><span class="cmd">cd 11-ddos &amp;&amp; node fixed.js</span><a class="port-link" href="http://localhost:3111" target="_blank">:3111</a></div>
+      </div>
+    </div>
+
+    <!-- 12 -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-meta">
+          <span class="num">12</span>
+          <span class="card-title">Prompt Injection</span>
+          <span class="tag tag-html">HTML</span>
+        </div>
+        <p class="card-desc">User input overrides an AI system prompt, causing the model to abandon its original purpose and follow adversarial directives.</p>
+      </div>
+      <div class="demo-list">
+        <div class="demo-row vuln"><span class="lbl lbl-vuln">Vuln</span><span class="cmd">Open 12-prompt-injection/vulnerable.html</span></div>
+        <div class="demo-row fix"> <span class="lbl lbl-fix">Fixed</span><span class="cmd">Open 12-prompt-injection/fixed.html</span></div>
+      </div>
+    </div>
+
+    <!-- 13 -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-meta">
+          <span class="num">13</span>
+          <span class="card-title">Data Poisoning</span>
+          <span class="tag tag-html">HTML</span>
+        </div>
+        <p class="card-desc">Injecting mislabeled training examples corrupts an ML classifier's predictions for targeted inputs in a controlled, adversarial way.</p>
+      </div>
+      <div class="demo-list">
+        <div class="demo-row vuln"><span class="lbl lbl-vuln">Vuln</span><span class="cmd">Open 13-data-poisoning/vulnerable.html</span></div>
+        <div class="demo-row fix"> <span class="lbl lbl-fix">Fixed</span><span class="cmd">Open 13-data-poisoning/fixed.html</span></div>
+      </div>
+    </div>
+
+    <!-- 14 -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-meta">
+          <span class="num">14</span>
+          <span class="card-title">Model Extraction</span>
+          <span class="tag tag-html">HTML</span>
+        </div>
+        <p class="card-desc">Systematic API queries allow an attacker to reconstruct a model's decision weights and produce a near-identical copy without direct access.</p>
+      </div>
+      <div class="demo-list">
+        <div class="demo-row vuln"><span class="lbl lbl-vuln">Vuln</span><span class="cmd">Open 14-model-extraction/vulnerable.html</span></div>
+        <div class="demo-row fix"> <span class="lbl lbl-fix">Fixed</span><span class="cmd">Open 14-model-extraction/fixed.html</span></div>
+      </div>
+    </div>
+
+  </div><!-- /.grid -->
+
+  <footer>
+    <span>For educational use only &mdash; localhost only &mdash; do not expose to a public network</span>
+    <span>
+      <a href="https://www.linkedin.com/in/YOUR-PROFILE" target="_blank" rel="noopener">LinkedIn</a>
+      &nbsp;&middot;&nbsp;
+      <a href="https://owasp.org/www-project-top-ten/" target="_blank" rel="noopener">OWASP Top 10</a>
+      &nbsp;&middot;&nbsp;
+      <a href="README.md">README</a>
+    </span>
+  </footer>
+
+</div><!-- /.wrap -->
+</body>
+</html>

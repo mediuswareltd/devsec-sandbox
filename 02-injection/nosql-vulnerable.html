@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<!--
+  NOSQL INJECTION DEMO — VULNERABLE VERSION
+  ==========================================
+  This file intentionally simulates a NoSQL (MongoDB-style) injection vulnerability
+  for educational purposes. No server is needed — all logic runs in the browser.
+
+  HOW NOSQL INJECTION WORKS:
+  ----------------------------
+  Traditional SQL injection inserts SQL syntax into string queries.
+  NoSQL injection is different: it inserts *query operators* (like MongoDB's $gt, $ne,
+  $where) as objects into a query that expects simple values.
+
+  MONGODB EXAMPLE — Vulnerable server-side code (Node.js + Express + mongoose):
+
+    app.post('/login', async (req, res) => {
+      // VULNERABLE: req.body is parsed directly as JSON by bodyParser.
+      // If the attacker sends:  { "username": "admin", "password": { "$gt": "" } }
+      // then db.findOne receives a MongoDB query operator as the password value!
+      const user = await User.findOne({
+        username: req.body.username,
+        password: req.body.password   // <-- could be an object, not a string!
+      });
+      if (user) res.json({ success: true });
+    });
+
+  THE ATTACK:
+  -----------
+  Normal login:    { "username": "admin", "password": "secret123" }
+  Injected login:  { "username": "admin", "password": { "$gt": "" } }
+
+  MongoDB evaluates { "$gt": "" } as "any value greater than an empty string",
+  which matches ANY non-empty password. Authentication is bypassed!
+
+  This works because:
+  1. The server uses JSON body parsing (bodyParser.json())
+  2. The application does not verify that password is a string before querying
+  3. MongoDB happily accepts operator objects in place of literal values
+
+  HOW TO USE THIS PAGE:
+  ----------------------
+  1. Try normal login:     username=admin, password=secret123
+  2. Try injection:        username=admin, password={"$gt":""}
+     The form will parse the JSON and pass it as an object — auth bypassed!
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NoSQL Injection — Vulnerable</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 820px;
+      margin: 40px auto;
+      padding: 0 20px;
+      background: #0f0f0f;
+      color: #e0e0e0;
+    }
+    h1  { color: #ff4d4d; }
+    h2  { color: #ff9944; border-bottom: 1px solid #333; padding-bottom: 6px; }
+    h3  { color: #ffcc44; }
+    label { display: block; margin-bottom: 4px; color: #aaa; }
+    input[type=text] {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 14px;
+      background: #1e1e1e;
+      border: 1px solid #444;
+      color: #e0e0e0;
+      border-radius: 4px;
+      box-sizing: border-box;
+      font-family: monospace;
+    }
+    button {
+      background: #c0392b;
+      color: #fff;
+      border: none;
+      padding: 10px 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    button:hover { background: #e74c3c; }
+    .card {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .vuln    { border-left: 4px solid #ff4d4d; }
+    .info    { border-left: 4px solid #3399ff; }
+    .success { border-left: 4px solid #44dd88; }
+    pre {
+      background: #111;
+      padding: 14px;
+      border-radius: 4px;
+      overflow-x: auto;
+      color: #7ec8e3;
+      font-size: 0.9rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    code {
+      background: #222;
+      padding: 2px 6px;
+      border-radius: 3px;
+      color: #ff9944;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 0.8rem;
+      font-weight: bold;
+    }
+    .badge-vuln { background: #4d0000; color: #ff4d4d; border: 1px solid #ff4d4d; }
+    .result-box {
+      padding: 14px;
+      border-radius: 6px;
+      margin-top: 10px;
+      font-weight: bold;
+      font-size: 1.1rem;
+    }
+    .result-success  { background: #0a2e1a; color: #44dd88; border: 1px solid #44dd88; }
+    .result-fail     { background: #2e0a0a; color: #ff4d4d; border: 1px solid #ff4d4d; }
+    .result-inject   { background: #2e1a00; color: #ffaa00; border: 1px solid #ffaa00; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px 12px; border: 1px solid #333; text-align: left; }
+    th { background: #222; color: #ffcc44; }
+  </style>
+</head>
+<body>
+
+  <h1>NoSQL Injection Demo <span class="badge badge-vuln">VULNERABLE</span></h1>
+
+  <div class="card info">
+    <h2>About this demo</h2>
+    <p>
+      This page simulates a <strong>MongoDB-backed login</strong> that is vulnerable to
+      NoSQL injection. No real database is used — the vulnerability is replicated in
+      JavaScript so you can see exactly what happens inside the query.
+    </p>
+    <p>
+      In a real vulnerable application, the server accepts a JSON body and passes it
+      directly to <code>db.collection.findOne()</code>. When the attacker sends
+      <code>{"$gt":""}</code> as the password, MongoDB treats it as a query operator
+      rather than a literal value — and authentication is bypassed.
+    </p>
+    <p>Open <code>nosql-fixed.html</code> to see the safe version.</p>
+  </div>
+
+  <div class="card">
+    <h2>Login</h2>
+    <form id="loginForm" onsubmit="handleLogin(event)">
+      <label for="username">Username</label>
+      <input type="text" id="username" placeholder="admin" value="admin" autocomplete="off">
+
+      <label for="password">
+        Password
+        <span style="color:#ff9944;font-size:0.85rem;">
+          — try <code>{"$gt":""}</code> instead of the real password!
+        </span>
+      </label>
+      <input type="text" id="password" placeholder='secret123 or {"$gt":""}' autocomplete="off">
+
+      <button type="submit">Sign In</button>
+    </form>
+  </div>
+
+  <div id="resultArea" style="display:none;"></div>
+
+  <div class="card vuln">
+    <h2>Attacks to try</h2>
+    <table>
+      <tr><th>Username</th><th>Password field value</th><th>Effect</th></tr>
+      <tr>
+        <td><code>admin</code></td>
+        <td><code>secret123</code></td>
+        <td>Normal login — succeeds</td>
+      </tr>
+      <tr>
+        <td><code>admin</code></td>
+        <td><code>{"$gt":""}</code></td>
+        <td>Injection — bypasses auth! $gt matches any non-empty string</td>
+      </tr>
+      <tr>
+        <td><code>admin</code></td>
+        <td><code>{"$ne":"x"}</code></td>
+        <td>Injection — $ne (not equal) also bypasses auth</td>
+      </tr>
+      <tr>
+        <td><code>admin</code></td>
+        <td><code>wrongpassword</code></td>
+        <td>Normal failure — wrong password</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="card vuln">
+    <h2>The vulnerable code</h2>
+    <pre>// On the server (Node.js + Express + mongoose) — VULNERABLE:
+app.post('/login', async (req, res) => {
+  // req.body is parsed from JSON by bodyParser.json()
+  // The attacker sends: { "username": "admin", "password": { "$gt": "" } }
+
+  const user = await User.findOne({
+    username: req.body.username,
+    password: req.body.password  // VULNERABILITY: could be an object!
+  });
+
+  // MongoDB sees: { username: "admin", password: { $gt: "" } }
+  // $gt: "" means "password field value > empty string" → matches ANY password!
+  if (user) {
+    return res.json({ token: generateToken(user) });  // attacker gets in!
+  }
+});</pre>
+  </div>
+
+  <div class="card info">
+    <h2>Why does this work?</h2>
+    <p>
+      MongoDB query operators like <code>$gt</code> (greater than), <code>$ne</code>
+      (not equal), <code>$regex</code>, and <code>$where</code> are designed to be used
+      in query documents. When user-supplied JSON reaches <code>findOne()</code> without
+      type-checking, an attacker can inject these operators as query conditions.
+    </p>
+    <p>
+      <code>{ password: { "$gt": "" } }</code> tells MongoDB:
+      <em>"find a document where the password field is greater than an empty string"</em> —
+      which is true for every stored password, so authentication is bypassed.
+    </p>
+  </div>
+
+  <script>
+    // ---------------------------------------------------------------------------
+    // In-memory "database" — simulates MongoDB collection
+    // ---------------------------------------------------------------------------
+    const users = [
+      { id: 1, username: 'admin', password: 'secret123', role: 'administrator' }
+    ];
+
+    // ---------------------------------------------------------------------------
+    // VULNERABLE login function
+    // Simulates: db.users.findOne({ username: username, password: password })
+    // ---------------------------------------------------------------------------
+    /**
+     * The vulnerability: if password is an object (e.g. { "$gt": "" }),
+     * MongoDB treats it as a query operator and matches any document where
+     * the password field satisfies that condition.
+     *
+     * We reproduce this behavior here to show exactly what happens.
+     */
+    function vulnerableLogin(username, password) {
+      // Build the MongoDB query object — this is what gets sent to the database
+      // VULNERABILITY: password could be an object, not a string!
+      const query = { username: username, password: password };
+
+      // Simulate MongoDB behavior:
+      // If password is an object with a MongoDB operator, apply the operator logic.
+      if (typeof password === 'object' && password !== null) {
+
+        if ('$gt' in password) {
+          // { "$gt": "" } → find documents where password > ""
+          // Any non-empty password string satisfies this!
+          const match = users.find(u =>
+            u.username === username && u.password > password['$gt']
+          );
+          return { user: match || null, query, injectionDetected: true, operator: '$gt' };
+        }
+
+        if ('$ne' in password) {
+          // { "$ne": "x" } → find documents where password != "x"
+          // Matches any password that isn't exactly "x"!
+          const match = users.find(u =>
+            u.username === username && u.password !== password['$ne']
+          );
+          return { user: match || null, query, injectionDetected: true, operator: '$ne' };
+        }
+
+        if ('$regex' in password) {
+          // { "$regex": ".*" } → matches any password
+          try {
+            const re = new RegExp(password['$regex']);
+            const match = users.find(u =>
+              u.username === username && re.test(u.password)
+            );
+            return { user: match || null, query, injectionDetected: true, operator: '$regex' };
+          } catch (e) {
+            return { user: null, query, injectionDetected: true, operator: '$regex (invalid)' };
+          }
+        }
+
+        // Unknown operator — still detected as injection attempt
+        return { user: null, query, injectionDetected: true, operator: 'unknown' };
+      }
+
+      // Normal string comparison (non-injected path)
+      const user = users.find(u => u.username === username && u.password === password) || null;
+      return { user, query, injectionDetected: false, operator: null };
+    }
+
+    // ---------------------------------------------------------------------------
+    // Form handler
+    // ---------------------------------------------------------------------------
+    function handleLogin(event) {
+      event.preventDefault();
+
+      const rawUsername = document.getElementById('username').value;
+      let   rawPassword = document.getElementById('password').value;
+
+      // VULNERABILITY: Try to parse the password as JSON.
+      // In a real vulnerable server, bodyParser.json() does this automatically
+      // when the Content-Type is application/json.
+      // Here we replicate that behavior explicitly so you can see it happen.
+      let parsedPassword = rawPassword;
+      let parsedAsJson   = false;
+
+      if (rawPassword.trim().startsWith('{')) {
+        try {
+          parsedPassword = JSON.parse(rawPassword);
+          parsedAsJson   = true;
+        } catch (e) {
+          // Not valid JSON — use as string
+        }
+      }
+
+      const result = vulnerableLogin(rawUsername, parsedPassword);
+      renderResult(rawUsername, rawPassword, parsedPassword, parsedAsJson, result);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Result renderer
+    // ---------------------------------------------------------------------------
+    function renderResult(rawUsername, rawPassword, parsedPassword, parsedAsJson, result) {
+      const { user, query, injectionDetected, operator } = result;
+      const area = document.getElementById('resultArea');
+      area.style.display = 'block';
+
+      let resultClass, resultMsg;
+      if (user && injectionDetected) {
+        resultClass = 'result-inject';
+        resultMsg   = `INJECTION SUCCESSFUL — logged in as "${user.username}" without the correct password!`;
+      } else if (user) {
+        resultClass = 'result-success';
+        resultMsg   = `Login successful — welcome, ${user.username}! (Role: ${user.role})`;
+      } else if (injectionDetected) {
+        resultClass = 'result-inject';
+        resultMsg   = `Injection attempt detected but no matching user found (user does not exist).`;
+      } else {
+        resultClass = 'result-fail';
+        resultMsg   = 'Login failed — invalid credentials.';
+      }
+
+      area.innerHTML = `
+        <div class="card ${injectionDetected ? 'vuln' : (user ? 'success' : '')}">
+          <h2>Result</h2>
+          <div class="result-box ${resultClass}">${escapeHtml(resultMsg)}</div>
+          ${injectionDetected ? `<p style="color:#ffaa00;margin-top:10px;">
+            MongoDB operator used: <code>${escapeHtml(operator)}</code>
+          </p>` : ''}
+        </div>
+
+        <div class="card vuln">
+          <h2>MongoDB Query Object</h2>
+          <p>This is the query object that was sent to <code>db.users.findOne()</code>:</p>
+          <pre>${escapeHtml(JSON.stringify(query, null, 2))}</pre>
+          ${parsedAsJson
+            ? `<p style="color:#ff9944;">
+                The password value was parsed from JSON into a JavaScript object before
+                the query was built. MongoDB received an operator object, not a string!
+              </p>`
+            : `<p>The password is a plain string — compared literally.</p>`}
+        </div>
+
+        <div class="card info">
+          <h2>Input details</h2>
+          <p>Username (raw string): <code>${escapeHtml(rawUsername)}</code></p>
+          <p>Password (raw input):  <code>${escapeHtml(rawPassword)}</code></p>
+          ${parsedAsJson
+            ? `<p>Password (after JSON.parse): <code>${escapeHtml(JSON.stringify(parsedPassword))}</code>
+               <br><em>Parsed as an object with type: ${escapeHtml(typeof parsedPassword)}</em></p>`
+            : `<p>Password type: <code>string</code></p>`}
+        </div>
+
+        <button onclick="resetForm()" style="background:#333;margin-bottom:20px;">← Try again</button>
+      `;
+    }
+
+    function resetForm() {
+      document.getElementById('resultArea').style.display = 'none';
+      document.getElementById('resultArea').innerHTML = '';
+      document.getElementById('password').value = '';
+      document.getElementById('password').focus();
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+  </script>
+
+</body>
+</html>

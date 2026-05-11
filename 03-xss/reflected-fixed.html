@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Search (XSS Fixed)</title>
+  <style>
+    body { font-family: sans-serif; padding: 24px; max-width: 600px; margin: 0 auto; }
+    h1 { color: #27ae60; }
+    .box { background: #d4edda; border: 1px solid #c3e6cb; padding: 14px; border-radius: 6px; margin: 14px 0; }
+    .result { background: #f0f0f0; padding: 12px; border-radius: 4px; margin-top: 10px; }
+    input[type=text] { padding: 8px; width: 300px; }
+    button { padding: 8px 16px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    .fix { background: #d1ecf1; border: 1px solid #bee5eb; padding: 12px; border-radius: 4px; margin-top: 14px; font-family: monospace; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>Search [FIXED - No XSS]</h1>
+  <div class="box">
+    &#10003; This page uses <code>textContent</code> — HTML tags are treated as plain text, not executed.
+  </div>
+
+  <form method="GET">
+    <input type="text" name="q" id="q-input" placeholder="Search...">
+    <button type="submit">Search</button>
+  </form>
+
+  <div id="result" class="result" style="display:none">
+    <span>You searched for: </span><strong id="query-text"></strong>
+  </div>
+
+  <div class="fix">
+    <strong>Try the same payloads — they are now harmless:</strong><br>
+    1. <code>&lt;img src=x onerror=alert('XSS!')&gt;</code> → displays as text<br>
+    2. <code>&lt;b style="color:red"&gt;I changed the page!&lt;/b&gt;</code> → displays as text<br>
+    3. <code>&lt;script&gt;alert('...')&lt;/script&gt;</code> → displays as text
+  </div>
+
+  <script>
+    // HTML escape function — converts dangerous chars to safe entities
+    function escapeHtml(str) {
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;');
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const query  = params.get('q');
+
+    if (query !== null) {
+      const resultDiv = document.getElementById('result');
+      resultDiv.style.display = 'block';
+
+      // ✅ FIX: Use textContent — it never interprets HTML tags.
+      // Even if the user types <script>alert()</script>, it shows as text.
+      document.getElementById('query-text').textContent = query;
+
+      document.getElementById('q-input').value = query;
+    }
+  </script>
+</body>
+</html>

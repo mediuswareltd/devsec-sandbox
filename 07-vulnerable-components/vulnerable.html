@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>App using VulnLib v1.0 (VULNERABLE)</title>
+  <style>
+    body { font-family: sans-serif; padding: 24px; max-width: 680px; margin: 0 auto; }
+    h1 { color: #c0392b; }
+    .lib-badge { display: inline-block; background: #f8d7da; border: 1px solid #f5c6cb;
+                 padding: 4px 12px; border-radius: 4px; color: #721c24; font-size: 0.85rem; margin-bottom: 12px; }
+    .box { background: #fff3cd; border: 1px solid #ffc107; padding: 14px; border-radius: 6px; margin: 14px 0; }
+    textarea { width: 100%; height: 80px; font-family: monospace; padding: 8px; box-sizing: border-box; }
+    button { padding: 8px 20px; background: #c0392b; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 8px; }
+    #output { background: #f0f0f0; padding: 12px; border-radius: 4px; margin-top: 12px; font-family: monospace; white-space: pre-wrap; min-height: 40px; }
+    .vuln-code { background: #2d1b1b; color: #ff7b72; padding: 12px; border-radius: 4px; font-family: monospace; font-size: 0.85rem; margin-top: 14px; line-height: 1.6; }
+    .attack { background: #f8d7da; border: 1px solid #f5c6cb; padding: 12px; border-radius: 4px; margin-top: 14px; font-size: 0.9rem; }
+    .attack code { display: block; background: #fff; border: 1px solid #ddd; padding: 6px 8px; border-radius: 3px; margin: 6px 0; font-size: 0.85rem; word-break: break-all; }
+    h3 { margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+  <h1>Settings Parser [VULNERABLE]</h1>
+  <div class="lib-badge">&#9888;&#65039; Using: settings-parser v1.0 (VULNERABLE — uses eval!)</div>
+
+  <div class="box">
+    This app uses a third-party "settings-parser" library version 1.0.
+    That version uses <code>eval()</code> internally to parse JSON.
+    Any JavaScript expression will be executed!
+  </div>
+
+  <h3>Enter your app settings (JSON):</h3>
+  <textarea id="settings-input">{"theme": "dark", "language": "en"}</textarea>
+  <br>
+  <button onclick="parseSettings()">Apply Settings</button>
+  <div id="output">Output will appear here...</div>
+
+  <div class="attack">
+    <strong>Try these attacks:</strong><br><br>
+    Prototype pollution:<br>
+    <code>{"theme":"dark","__proto__":{"isAdmin":true}}</code>
+    Code execution (changes background color):<br>
+    <code>(function(){ document.body.style.background='red'; return {theme:'red'}; })()</code>
+    Alert box:<br>
+    <code>(function(){ alert('Code executed via eval!'); return {}; })()</code>
+    Read cookies (simulated data exfiltration):<br>
+    <code>(function(){ document.getElementById('output').textContent='Cookies: '+document.cookie; return {}; })()</code>
+  </div>
+
+  <div class="vuln-code">
+    <strong>// settings-parser v1.0 source code (the vulnerable library):</strong><br>
+    function parseSettings(jsonString) {<br>
+    &nbsp;&nbsp;// &#10060; VULNERABILITY: eval() executes ANY JavaScript, not just JSON!<br>
+    &nbsp;&nbsp;return eval('(' + jsonString + ')');<br>
+    }<br><br>
+    <strong>// CVE equivalent: attacker controls the jsonString input</strong><br>
+    <strong>// and eval() will execute it as live JavaScript code.</strong>
+  </div>
+
+  <script>
+    // ===== Simulated "settings-parser v1.0" library (VULNERABLE) =====
+    // In a real project this would be in node_modules/settings-parser/index.js
+    // Published to npm with a known vulnerability — CVE-XXXX-YYYY.
+    // The library author used eval() as a shortcut, which is dangerous
+    // because any JavaScript expression — not just JSON — will execute.
+    const SettingsParserV1 = {
+      version: '1.0.0',
+      parse: function(jsonString) {
+        // ❌ VULNERABILITY: eval() executes JavaScript, not just JSON!
+        // An attacker who controls this input can:
+        //   - Execute arbitrary code in the browser context
+        //   - Steal cookies and session tokens
+        //   - Modify the DOM
+        //   - Perform prototype pollution
+        try {
+          return eval('(' + jsonString + ')');
+        } catch(e) {
+          return { error: e.message };
+        }
+      }
+    };
+
+    function parseSettings() {
+      const input = document.getElementById('settings-input').value;
+
+      // The app blindly passes user input to the vulnerable library.
+      // This is realistic — developers trust library APIs.
+      const result = SettingsParserV1.parse(input);
+
+      document.getElementById('output').textContent =
+        'Parsed settings:\n' + JSON.stringify(result, null, 2);
+    }
+  </script>
+</body>
+</html>

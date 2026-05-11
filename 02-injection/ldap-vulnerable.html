@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<!--
+  LDAP INJECTION DEMO — VULNERABLE VERSION
+  ==========================================
+  This file intentionally simulates an LDAP injection vulnerability for educational purposes.
+  No server is needed — all logic runs in the browser.
+
+  WHAT IS LDAP?
+  --------------
+  LDAP (Lightweight Directory Access Protocol) is used to query directory services
+  such as Active Directory (Windows) or OpenLDAP (Linux). Applications often use
+  LDAP to authenticate users against a corporate directory.
+
+  HOW LDAP INJECTION WORKS:
+  --------------------------
+  LDAP queries use filter strings with a specific syntax. A typical authentication filter:
+
+    (&(uid=alice)(userPassword=wonderland))
+
+  Breakdown:
+    &           = AND (all conditions must match)
+    (uid=alice) = the username field equals "alice"
+    (userPassword=wonderland) = the password field equals "wonderland"
+
+  VULNERABILITY: When the application builds the filter by concatenating user input,
+  an attacker can inject LDAP filter syntax characters:
+    * ( ) \ NUL
+
+  THE CLASSIC ATTACK:
+  ---------------------
+  Normal input:    username=alice     → filter: (&(uid=alice)(userPassword=x))
+  Injected input:  username=*)(uid=*))(|(uid=*
+
+  The injected filter becomes:
+    (&(uid=*)(uid=*))(|(uid=*)(userPassword=x))
+
+  Broken down:
+    (&(uid=*)(uid=*))   = AND (uid matches anything)(uid matches anything) → ALWAYS TRUE
+    (|(uid=*)(userPassword=x))  = OR (uid matches anything) → ALSO ALWAYS TRUE
+
+  The filter matches ANY user in the directory — authentication is completely bypassed!
+
+  OTHER ATTACKS:
+  ---------------
+  username: admin)(|(password=*    → logs in as admin regardless of password
+  username: *                      → matches all users (wildcard)
+  username: admin)(&               → closes the condition and adds AND (nothing)
+
+  HOW TO USE THIS PAGE:
+  ----------------------
+  1. Try normal login:  username=alice, password=wonderland
+  2. Try injection:     username=*)(uid=*))(|(uid=*   (any password)
+     → The filter becomes always-true and authentication is bypassed.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LDAP Injection — Vulnerable</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 860px;
+      margin: 40px auto;
+      padding: 0 20px;
+      background: #0f0f0f;
+      color: #e0e0e0;
+    }
+    h1  { color: #ff4d4d; }
+    h2  { color: #ff9944; border-bottom: 1px solid #333; padding-bottom: 6px; }
+    h3  { color: #ffcc44; }
+    label { display: block; margin-bottom: 4px; color: #aaa; }
+    input[type=text] {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 14px;
+      background: #1e1e1e;
+      border: 1px solid #444;
+      color: #e0e0e0;
+      border-radius: 4px;
+      box-sizing: border-box;
+      font-family: monospace;
+    }
+    button {
+      background: #c0392b;
+      color: #fff;
+      border: none;
+      padding: 10px 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    button:hover { background: #e74c3c; }
+    .card {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .vuln    { border-left: 4px solid #ff4d4d; }
+    .info    { border-left: 4px solid #3399ff; }
+    pre {
+      background: #111;
+      padding: 14px;
+      border-radius: 4px;
+      overflow-x: auto;
+      color: #7ec8e3;
+      font-size: 0.9rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    code {
+      background: #222;
+      padding: 2px 6px;
+      border-radius: 3px;
+      color: #ff9944;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 0.8rem;
+      font-weight: bold;
+    }
+    .badge-vuln { background: #4d0000; color: #ff4d4d; border: 1px solid #ff4d4d; }
+    .result-box {
+      padding: 14px;
+      border-radius: 6px;
+      margin-top: 10px;
+      font-weight: bold;
+      font-size: 1.05rem;
+    }
+    .result-success  { background: #0a2e1a; color: #44dd88; border: 1px solid #44dd88; }
+    .result-fail     { background: #2e0a0a; color: #ff4d4d; border: 1px solid #ff4d4d; }
+    .result-inject   { background: #2e1a00; color: #ffaa00; border: 1px solid #ffaa00; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px 12px; border: 1px solid #333; text-align: left; }
+    th { background: #222; color: #ffcc44; }
+    .filter-display {
+      font-family: monospace;
+      font-size: 1rem;
+      color: #ff9944;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>LDAP Injection Demo <span class="badge badge-vuln">VULNERABLE</span></h1>
+
+  <div class="card info">
+    <h2>About this demo</h2>
+    <p>
+      This page simulates an <strong>LDAP-backed login</strong> that is vulnerable to
+      LDAP injection. No real LDAP server is used — the filter construction and
+      injection logic run entirely in JavaScript so you can see the attack clearly.
+    </p>
+    <p>
+      The application builds an LDAP filter string by concatenating user input directly.
+      An attacker can inject LDAP syntax characters to break out of the expected filter
+      structure and construct a condition that always evaluates to true.
+    </p>
+    <p>Open <code>ldap-fixed.html</code> to see the safe version.</p>
+  </div>
+
+  <div class="card">
+    <h2>Login</h2>
+    <form id="loginForm" onsubmit="handleLogin(event)">
+      <label for="username">Username</label>
+      <input type="text" id="username" placeholder="alice" value="alice" autocomplete="off">
+
+      <label for="password">Password</label>
+      <input type="text" id="password" placeholder="wonderland" autocomplete="off">
+
+      <button type="submit">Sign In</button>
+    </form>
+  </div>
+
+  <div id="resultArea" style="display:none;"></div>
+
+  <div class="card vuln">
+    <h2>Attacks to try</h2>
+    <table>
+      <tr><th>Username</th><th>Password</th><th>Effect</th></tr>
+      <tr>
+        <td><code>alice</code></td>
+        <td><code>wonderland</code></td>
+        <td>Normal login — succeeds</td>
+      </tr>
+      <tr>
+        <td><code>*)(uid=*))(|(uid=*</code></td>
+        <td><em>anything</em></td>
+        <td>Classic injection — filter always true, bypasses auth</td>
+      </tr>
+      <tr>
+        <td><code>alice)(|(uid=*</code></td>
+        <td><em>anything</em></td>
+        <td>Injects an OR condition — bypasses password check</td>
+      </tr>
+      <tr>
+        <td><code>*</code></td>
+        <td><em>anything</em></td>
+        <td>Wildcard — may match any user</td>
+      </tr>
+      <tr>
+        <td><code>alice</code></td>
+        <td><code>wrongpass</code></td>
+        <td>Normal failure</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="card vuln">
+    <h2>The vulnerable code</h2>
+    <pre>// VULNERABLE — never do this!
+function buildLdapFilter(username, password) {
+  // User input is directly concatenated into the LDAP filter string.
+  // LDAP special characters in username/password break the filter structure!
+  return `(&(uid=${username})(userPassword=${password}))`;
+}
+
+// Normal filter:   (&(uid=alice)(userPassword=wonderland))
+// Injected filter: (&(uid=*)(uid=*))(|(uid=*)(userPassword=x))
+//                       ^--- injected! closes the AND, adds OR always-true</pre>
+  </div>
+
+  <div class="card info">
+    <h2>LDAP filter syntax primer</h2>
+    <table>
+      <tr><th>Syntax</th><th>Meaning</th></tr>
+      <tr><td><code>(&(a)(b))</code></td><td>AND: both a and b must be true</td></tr>
+      <tr><td><code>(|(a)(b))</code></td><td>OR: at least one of a, b must be true</td></tr>
+      <tr><td><code>(!(a))</code></td><td>NOT: a must be false</td></tr>
+      <tr><td><code>(uid=alice)</code></td><td>Attribute equality: uid equals "alice"</td></tr>
+      <tr><td><code>(uid=*)</code></td><td>Wildcard: uid has any value (matches all)</td></tr>
+      <tr><td><code>(uid=a*)</code></td><td>Prefix wildcard: uid starts with "a"</td></tr>
+    </table>
+    <p>
+      Special characters <code>* ( ) \ NUL</code> have syntactic meaning in LDAP filters.
+      When they appear unescaped in user input, they alter the filter structure.
+    </p>
+  </div>
+
+  <script>
+    // ---------------------------------------------------------------------------
+    // In-memory "LDAP directory" — simulates a directory server
+    // ---------------------------------------------------------------------------
+    const ldapDirectory = [
+      { uid: 'alice', userPassword: 'wonderland', cn: 'Alice Liddell',    role: 'user'          },
+      { uid: 'admin', userPassword: 'adm1nP@ss',  cn: 'Administrator',    role: 'administrator' },
+      { uid: 'bob',   userPassword: 'b0bpass',     cn: 'Bob Builder',      role: 'user'          },
+    ];
+
+    // ---------------------------------------------------------------------------
+    // VULNERABLE: build LDAP filter by string concatenation
+    // ---------------------------------------------------------------------------
+    /**
+     * Builds a normal LDAP authentication filter.
+     * VULNERABILITY: User input is concatenated without escaping.
+     * Injected LDAP syntax characters will break the filter structure.
+     *
+     * @param {string} username - Raw user input (uid value)
+     * @param {string} password - Raw user input (userPassword value)
+     * @returns {string} The constructed LDAP filter string
+     */
+    function buildLdapFilter(username, password) {
+      // VULNERABLE: direct string concatenation
+      // Normal: (&(uid=alice)(userPassword=wonderland))
+      // Injected: (&(uid=*)(uid=*))(|(uid=*)(userPassword=x))
+      return `(&(uid=${username})(userPassword=${password}))`;
+    }
+
+    // ---------------------------------------------------------------------------
+    // VULNERABLE: simulate LDAP search with injection detection
+    // ---------------------------------------------------------------------------
+    /**
+     * Simulates an LDAP server evaluating the filter.
+     *
+     * In a real LDAP server, the filter string is parsed and evaluated against
+     * the directory. If the filter is injected to be always-true, any entry matches.
+     *
+     * We detect injection by looking for the patterns that indicate the filter
+     * structure has been broken — unclosed/extra parentheses and wildcards.
+     */
+    function vulnerableLdapLogin(username, password) {
+      const filter = buildLdapFilter(username, password);
+
+      // Detect injection patterns — these indicate the filter structure was broken
+      // by the user injecting LDAP syntax characters
+      const injectionPatterns = [
+        /\*\)\(uid=\*\)/,          // classic: *)(uid=*)
+        /\)\s*\(\s*\|/,             // closes condition and opens OR
+        /\)\s*\(\s*&/,              // closes condition and opens AND
+        /\*\)\s*\)\s*\(/,           // multiple closings + opening
+        /\(uid=\*\)/,               // wildcard uid match
+        /\|\s*\(uid=\*\)/,          // OR (uid=*)
+      ];
+
+      const injectionDetected = injectionPatterns.some(p => p.test(filter));
+
+      if (injectionDetected) {
+        // Injection caused the filter to be always-true or match any user.
+        // Return the first user (simulating the LDAP server returning the first match).
+        return {
+          user: ldapDirectory[0],
+          filter,
+          injectionDetected: true,
+        };
+      }
+
+      // Wildcard username (*) matches all users — another form of injection
+      if (username.trim() === '*') {
+        return {
+          user: ldapDirectory[0], // first match
+          filter,
+          injectionDetected: true,
+        };
+      }
+
+      // Normal path: check exact username + password match
+      const user = ldapDirectory.find(
+        u => u.uid === username && u.userPassword === password
+      ) || null;
+
+      return { user, filter, injectionDetected: false };
+    }
+
+    // ---------------------------------------------------------------------------
+    // Form handler
+    // ---------------------------------------------------------------------------
+    function handleLogin(event) {
+      event.preventDefault();
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const result   = vulnerableLdapLogin(username, password);
+      renderResult(username, password, result);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Result renderer
+    // ---------------------------------------------------------------------------
+    function renderResult(username, password, result) {
+      const { user, filter, injectionDetected } = result;
+      const area = document.getElementById('resultArea');
+      area.style.display = 'block';
+
+      let resultClass, resultMsg;
+      if (user && injectionDetected) {
+        resultClass = 'result-inject';
+        resultMsg   = `INJECTION SUCCESSFUL — logged in as "${user.uid}" without correct credentials!`;
+      } else if (user) {
+        resultClass = 'result-success';
+        resultMsg   = `Login successful — welcome, ${user.cn}! (Role: ${user.role})`;
+      } else {
+        resultClass = 'result-fail';
+        resultMsg   = 'Login failed — no matching LDAP entry.';
+      }
+
+      // Highlight the injected part of the filter
+      let filterDisplay = escapeHtml(filter);
+      if (injectionDetected) {
+        // Highlight the normal part vs injected extra content
+        filterDisplay = `<span style="color:#44dd88;">(&(uid=</span><span style="color:#ff4d4d;font-weight:bold;">${escapeHtml(username)}</span><span style="color:#44dd88;">)(userPassword=</span><span style="color:#ff4d4d;font-weight:bold;">${escapeHtml(password)}</span><span style="color:#44dd88;">))</span>`;
+      }
+
+      area.innerHTML = `
+        <div class="card ${injectionDetected ? 'vuln' : ''}">
+          <h2>Result</h2>
+          <div class="result-box ${resultClass}">${escapeHtml(resultMsg)}</div>
+          ${injectionDetected ? `<p style="color:#ff9944;margin-top:10px;">
+            The injected LDAP syntax broke the filter structure, making it match ANY user.
+          </p>` : ''}
+        </div>
+
+        <div class="card vuln">
+          <h2>Constructed LDAP Filter</h2>
+          <p>This is the filter string built from your input:</p>
+          <pre class="filter-display">${filterDisplay}</pre>
+          ${injectionDetected
+            ? `<p style="color:#ff9944;">
+                The filter is no longer checking only for uid="${escapeHtml(username)}" and the password.
+                The injected characters added new conditions (wildcards, OR, extra parens)
+                that made the filter evaluate to true for every directory entry.
+              </p>`
+            : `<p>Filter structure is intact — values are treated as literal attribute values.</p>`}
+          <h3>Expected filter for these credentials:</h3>
+          <pre>(&(uid=${escapeHtml(username)})(userPassword=${escapeHtml(password)}))</pre>
+        </div>
+
+        <div class="card info">
+          <h2>Input submitted</h2>
+          <p>Username: <code>${escapeHtml(username)}</code></p>
+          <p>Password: <code>${escapeHtml(password)}</code></p>
+        </div>
+
+        <button onclick="resetForm()" style="background:#333;margin-bottom:20px;">← Try again</button>
+      `;
+    }
+
+    function resetForm() {
+      document.getElementById('resultArea').style.display = 'none';
+      document.getElementById('resultArea').innerHTML = '';
+      document.getElementById('username').value = 'alice';
+      document.getElementById('password').value = '';
+      document.getElementById('username').focus();
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+  </script>
+
+</body>
+</html>

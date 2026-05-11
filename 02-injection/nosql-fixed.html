@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<!--
+  NOSQL INJECTION DEMO — FIXED VERSION
+  ======================================
+  This file demonstrates the correct defense against NoSQL injection: type validation.
+
+  THE FIX:
+  ---------
+  Before passing user input to the database query, verify that each value is a string
+  (or the expected primitive type). If the value is an object, reject the request.
+
+  This prevents MongoDB operator injection because:
+  - The attacker's payload { "$gt": "" } is an object, not a string
+  - typeof { "$gt": "" } === 'object' → validation fails → request rejected
+  - The query is never executed with an operator value
+
+  SERVER-SIDE FIX (Node.js + Express + mongoose):
+
+    app.post('/login', async (req, res) => {
+      const { username, password } = req.body;
+
+      // FIX: Validate that both fields are strings before querying
+      if (typeof username !== 'string' || typeof password !== 'string') {
+        return res.status(400).json({ error: 'Invalid input — strings required.' });
+      }
+
+      const user = await User.findOne({ username, password });
+      if (user) return res.json({ token: generateToken(user) });
+    });
+
+  ADDITIONAL DEFENSES (layered approach):
+  -----------------------------------------
+  1. Type validation (shown here) — simplest and most effective
+  2. Use an ODM like Mongoose with schema types (String fields reject objects automatically)
+  3. Use $eq operator explicitly: { password: { $eq: req.body.password } }
+     — this is a no-op for strings but prevents operator injection
+  4. Sanitize with a library like mongo-sanitize (strips $ keys from objects)
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NoSQL Injection — Fixed</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 820px;
+      margin: 40px auto;
+      padding: 0 20px;
+      background: #0f0f0f;
+      color: #e0e0e0;
+    }
+    h1  { color: #44dd88; }
+    h2  { color: #44bb77; border-bottom: 1px solid #333; padding-bottom: 6px; }
+    h3  { color: #88ffaa; }
+    label { display: block; margin-bottom: 4px; color: #aaa; }
+    input[type=text] {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 14px;
+      background: #1e1e1e;
+      border: 1px solid #444;
+      color: #e0e0e0;
+      border-radius: 4px;
+      box-sizing: border-box;
+      font-family: monospace;
+    }
+    button {
+      background: #1a6b40;
+      color: #fff;
+      border: none;
+      padding: 10px 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    button:hover { background: #22884f; }
+    .card {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .safe    { border-left: 4px solid #44dd88; }
+    .info    { border-left: 4px solid #3399ff; }
+    .blocked { border-left: 4px solid #ff9944; }
+    pre {
+      background: #111;
+      padding: 14px;
+      border-radius: 4px;
+      overflow-x: auto;
+      color: #7ec8e3;
+      font-size: 0.9rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    code {
+      background: #222;
+      padding: 2px 6px;
+      border-radius: 3px;
+      color: #88ffaa;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 0.8rem;
+      font-weight: bold;
+    }
+    .badge-safe { background: #003320; color: #44dd88; border: 1px solid #44dd88; }
+    .result-box {
+      padding: 14px;
+      border-radius: 6px;
+      margin-top: 10px;
+      font-weight: bold;
+      font-size: 1.1rem;
+    }
+    .result-success  { background: #0a2e1a; color: #44dd88; border: 1px solid #44dd88; }
+    .result-fail     { background: #2e0a0a; color: #ff4d4d; border: 1px solid #ff4d4d; }
+    .result-blocked  { background: #2e1a00; color: #ffaa00; border: 1px solid #ffaa00; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px 12px; border: 1px solid #333; text-align: left; }
+    th { background: #222; color: #88ffaa; }
+  </style>
+</head>
+<body>
+
+  <h1>NoSQL Injection Demo <span class="badge badge-safe">FIXED</span></h1>
+
+  <div class="card safe">
+    <h2>What changed?</h2>
+    <p>
+      Before building the query, this version <strong>validates that both
+      <code>username</code> and <code>password</code> are strings</strong>.
+    </p>
+    <p>
+      If either value is an object (e.g. <code>{"$gt":""}</code>), the login is
+      rejected immediately with a <code>400 Bad Request</code> error.
+      The query is never executed.
+    </p>
+    <p>Try the same injection attacks — they will all be blocked.</p>
+    <p>Open <code>nosql-vulnerable.html</code> to see the broken version.</p>
+  </div>
+
+  <div class="card">
+    <h2>Login</h2>
+    <form id="loginForm" onsubmit="handleLogin(event)">
+      <label for="username">Username</label>
+      <input type="text" id="username" placeholder="admin" value="admin" autocomplete="off">
+
+      <label for="password">
+        Password
+        <span style="color:#88ffaa;font-size:0.85rem;">
+          — try <code>{"$gt":""}</code> — it will be rejected
+        </span>
+      </label>
+      <input type="text" id="password" placeholder='secret123 or {"$gt":""}' autocomplete="off">
+
+      <button type="submit">Sign In</button>
+    </form>
+  </div>
+
+  <div id="resultArea" style="display:none;"></div>
+
+  <div class="card info">
+    <h2>Attacks to try (all blocked)</h2>
+    <table>
+      <tr><th>Username</th><th>Password field value</th><th>Expected result</th></tr>
+      <tr>
+        <td><code>admin</code></td>
+        <td><code>secret123</code></td>
+        <td>Login succeeds (correct credentials)</td>
+      </tr>
+      <tr>
+        <td><code>admin</code></td>
+        <td><code>{"$gt":""}</code></td>
+        <td>Blocked — password is not a string (it is an object)</td>
+      </tr>
+      <tr>
+        <td><code>admin</code></td>
+        <td><code>{"$ne":"x"}</code></td>
+        <td>Blocked — password is not a string</td>
+      </tr>
+      <tr>
+        <td><code>admin</code></td>
+        <td><code>wrongpassword</code></td>
+        <td>Login fails — wrong password (string comparison)</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="card safe">
+    <h2>The safe code</h2>
+    <pre>// FIX: Type validation before querying
+function safeLogin(username, password) {
+
+  // Verify that both inputs are strings, not objects or other types.
+  // This blocks MongoDB operator injection, because:
+  //   typeof { "$gt": "" }  === 'object'  → rejected!
+  //   typeof "secret123"    === 'string'  → allowed
+
+  if (typeof username !== 'string' || typeof password !== 'string') {
+    throw new Error('Invalid input: username and password must be strings.');
+  }
+
+  // Now it is safe to query — both values are guaranteed to be plain strings.
+  // MongoDB will compare them literally, never as operators.
+  return db.users.findOne({ username: username, password: password });
+}</pre>
+
+    <h3>Additional defenses (defense-in-depth)</h3>
+    <pre>// Option 2: Use Mongoose schema (String type rejects objects automatically)
+const UserSchema = new mongoose.Schema({
+  username: { type: String, required: true },
+  password: { type: String, required: true }
+});
+
+// Option 3: Use $eq operator explicitly (no-op for strings, blocks operators)
+db.users.findOne({
+  username: { $eq: username },
+  password: { $eq: password }
+});
+
+// Option 4: Use a sanitization library
+const mongoSanitize = require('express-mongo-sanitize');
+app.use(mongoSanitize());  // strips keys starting with $ from req.body</pre>
+  </div>
+
+  <script>
+    // ---------------------------------------------------------------------------
+    // In-memory "database" — same data as vulnerable version
+    // ---------------------------------------------------------------------------
+    const users = [
+      { id: 1, username: 'admin', password: 'secret123', role: 'administrator' }
+    ];
+
+    // ---------------------------------------------------------------------------
+    // SAFE login function — validates types before querying
+    // ---------------------------------------------------------------------------
+    /**
+     * FIX: Check that username and password are strings before using them in a query.
+     * An injected object like { "$gt": "" } will fail this check and be rejected.
+     */
+    function safeLogin(username, password) {
+      // FIX: Type validation
+      // typeof checks are the key defense here.
+      // An attacker's { "$gt": "" } payload is typeof 'object', not 'string'.
+      if (typeof username !== 'string') {
+        return { user: null, blocked: true, reason: `username must be a string (got ${typeof username})` };
+      }
+      if (typeof password !== 'string') {
+        return { user: null, blocked: true, reason: `password must be a string (got ${typeof password})` };
+      }
+
+      // Both inputs are confirmed strings — safe to query with exact equality
+      const query = { username: username, password: password };
+      const user  = users.find(u => u.username === username && u.password === password) || null;
+
+      return { user, blocked: false, reason: null, query };
+    }
+
+    // ---------------------------------------------------------------------------
+    // Form handler
+    // ---------------------------------------------------------------------------
+    function handleLogin(event) {
+      event.preventDefault();
+
+      const rawUsername = document.getElementById('username').value;
+      let   rawPassword = document.getElementById('password').value;
+
+      // Replicate what bodyParser.json() does on the server:
+      // parse JSON if the input looks like a JSON object.
+      let parsedPassword = rawPassword;
+      let parsedAsJson   = false;
+
+      if (rawPassword.trim().startsWith('{')) {
+        try {
+          parsedPassword = JSON.parse(rawPassword);
+          parsedAsJson   = true;
+        } catch (e) {
+          // Not valid JSON — use as string
+        }
+      }
+
+      const result = safeLogin(rawUsername, parsedPassword);
+      renderResult(rawUsername, rawPassword, parsedPassword, parsedAsJson, result);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Result renderer
+    // ---------------------------------------------------------------------------
+    function renderResult(rawUsername, rawPassword, parsedPassword, parsedAsJson, result) {
+      const { user, blocked, reason, query } = result;
+      const area = document.getElementById('resultArea');
+      area.style.display = 'block';
+
+      let resultClass, resultMsg;
+      if (blocked) {
+        resultClass = 'result-blocked';
+        resultMsg   = `BLOCKED — ${reason}. Injection attempt rejected before querying.`;
+      } else if (user) {
+        resultClass = 'result-success';
+        resultMsg   = `Login successful — welcome, ${user.username}! (Role: ${user.role})`;
+      } else {
+        resultClass = 'result-fail';
+        resultMsg   = 'Login failed — invalid credentials.';
+      }
+
+      area.innerHTML = `
+        <div class="card ${blocked ? 'blocked' : (user ? 'safe' : '')}">
+          <h2>Result</h2>
+          <div class="result-box ${resultClass}">${escapeHtml(resultMsg)}</div>
+        </div>
+
+        ${blocked
+          ? `<div class="card safe">
+              <h2>Type Validation Blocked the Attack</h2>
+              <p>The type check ran <strong>before</strong> the query was built:</p>
+              <pre>if (typeof password !== 'string') {
+  // Rejected! The value is: ${escapeHtml(JSON.stringify(parsedPassword))}
+  // typeof "${escapeHtml(JSON.stringify(parsedPassword))}" === '${typeof parsedPassword}'
+  // Expected 'string' → request rejected, query never executed
+  throw new Error('Invalid input');
+}</pre>
+            </div>`
+          : `<div class="card safe">
+              <h2>Safe Query Object</h2>
+              <p>Both inputs were confirmed as strings. Query built safely:</p>
+              <pre>${escapeHtml(JSON.stringify(query, null, 2))}</pre>
+              <p>Values are plain strings — no operator injection possible.</p>
+            </div>`}
+
+        <div class="card info">
+          <h2>Input details</h2>
+          <p>Username:              <code>${escapeHtml(rawUsername)}</code></p>
+          <p>Password (raw input):  <code>${escapeHtml(rawPassword)}</code></p>
+          ${parsedAsJson
+            ? `<p>Password (parsed):     <code>${escapeHtml(JSON.stringify(parsedPassword))}</code>
+               <br>Type after parsing:   <code>${typeof parsedPassword}</code>
+               ${blocked ? '<br><strong style="color:#ffaa00;">Not a string → blocked by type check.</strong>' : ''}</p>`
+            : `<p>Password type: <code>string</code></p>`}
+        </div>
+
+        <button onclick="resetForm()" style="background:#333;margin-bottom:20px;">← Try again</button>
+      `;
+    }
+
+    function resetForm() {
+      document.getElementById('resultArea').style.display = 'none';
+      document.getElementById('resultArea').innerHTML = '';
+      document.getElementById('password').value = '';
+      document.getElementById('password').focus();
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+  </script>
+
+</body>
+</html>
