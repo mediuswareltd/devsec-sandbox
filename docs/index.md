@@ -5,6 +5,9 @@ hero:
   name: "DevSec Sandbox"
   text: "Educational vulnerability playground"
   tagline: "An educational security lab with vulnerable and fixed demos for common web/app security issues."
+  image:
+    src: /hero.svg
+    alt: "DevSec Sandbox"
   actions:
   - theme: brand
     text: Get started
