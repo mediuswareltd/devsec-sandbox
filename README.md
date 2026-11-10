@@ -1,5 +1,7 @@
 # Vulnerability Playground
 
+[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-0f766e)](https://mediuswareltd.github.io/devsec-sandbox/)
+
 An educational security lab with 14 vulnerability demos. Each has a **vulnerable** version and a **fixed** version.
 
 ## Requirements
@@ -63,3 +65,15 @@ vulnerability-playground/
 ## Safety
 
 These demos are intentionally vulnerable. **Only run on localhost.** Never expose them on a public network.
+
+## Documentation
+
+Full docs site (VitePress): **https://mediuswareltd.github.io/devsec-sandbox/**
+
+Local preview:
+
+```bash
+cd docs
+npm install
+npm run docs:dev
+```
